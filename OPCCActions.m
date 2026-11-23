@@ -13,7 +13,7 @@ NSString *const OPCCReloadNotification  = @"OPCCReloadNotification";
 + (id)sharedInstance; - (BOOL)wiFiEnabled; - (void)setWiFiEnabled:(BOOL)e; - (NSString *)currentNetworkName;
 @end
 @interface BluetoothManager : NSObject
-+ (id)sharedInstance; - (BOOL)powered; - (BOOL)setPowered:(BOOL)p; - (BOOL)enabled; - (BOOL)setEnabled:(BOOL)e;
++ (id)sharedInstance; - (BOOL)powered; - (BOOL)setPowered:(BOOL)p;
 @end
 @interface RadiosPreferences : NSObject
 - (BOOL)airplaneMode; - (void)setAirplaneMode:(BOOL)m; - (void)synchronize;
@@ -22,7 +22,7 @@ NSString *const OPCCReloadNotification  = @"OPCCReloadNotification";
 + (id)sharedInstance; - (BOOL)isUserLocked; - (void)lock; - (void)unlock;
 @end
 @interface CBBlueLightClient : NSObject
-- (BOOL)setEnabled:(BOOL)e; - (BOOL)getBlueLightStatus:(void *)s;
+- (BOOL)getBlueLightStatus:(void *)s;
 @end
 @interface _CDBatterySaver : NSObject
 + (id)batterySaver; - (NSInteger)getPowerMode; - (BOOL)setPowerMode:(NSInteger)m error:(NSError **)e;
@@ -44,6 +44,14 @@ NSString *const OPCCReloadNotification  = @"OPCCReloadNotification";
 @interface DNDState : NSObject - (BOOL)isActive; @end
 @interface LSApplicationWorkspace : NSObject
 + (id)defaultWorkspace; - (BOOL)openSensitiveURL:(NSURL *)u withOptions:(id)o;
+@end
+@interface CLLocationManager (OPCC)
++ (void)setLocationServicesEnabled:(BOOL)e;
+@end
+@interface RPScreenRecorder : NSObject
++ (id)sharedRecorder; - (BOOL)isRecording;
+- (void)startRecordingWithHandler:(void (^)(NSError *))h;
+- (void)stopRecordingWithHandler:(void (^)(id, NSError *))h;
 @end
 @interface SBScreenshotManager : NSObject
 + (id)sharedInstance; - (void)saveScreenshotsWithCompletion:(id)c;
@@ -133,7 +141,7 @@ static NSString *const kDNDClient = @"com.opcc.coloroscc";
             AVCaptureDevice *d = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
             if ([d hasTorch] && [d lockForConfiguration:nil]) { d.torchMode = on ? AVCaptureTorchModeOff : AVCaptureTorchModeOn; [d unlockForConfiguration]; }
         } else if ([i isEqualToString:@"location"]) {
-            [objc_getClass("CLLocationManager") setLocationServicesEnabled:!on];
+            [CLLocationManager setLocationServicesEnabled:!on];
         } else if ([i isEqualToString:@"airplane"]) {
             RadiosPreferences *p = [[objc_getClass("RadiosPreferences") alloc] init]; [p setAirplaneMode:!on]; [p synchronize];
         } else if ([i isEqualToString:@"autorotate"]) {
@@ -147,7 +155,7 @@ static NSString *const kDNDClient = @"com.opcc.coloroscc";
             }
         } else if ([i isEqualToString:@"eyecomfort"]) {
             static CBBlueLightClient *c; if (!c) c = [[objc_getClass("CBBlueLightClient") alloc] init];
-            [c setEnabled:!on];
+            ((BOOL(*)(id, SEL, BOOL))objc_msgSend)(c, NSSelectorFromString(@"setEnabled:"), !on);
         } else if ([i isEqualToString:@"powersaving"]) {
             [[objc_getClass("_CDBatterySaver") batterySaver] setPowerMode:on ? 0 : 1 error:nil];
         } else if ([i isEqualToString:@"quickshare"]) {
@@ -204,7 +212,7 @@ static NSString *const kDNDClient = @"com.opcc.coloroscc";
 + (NSString *)wifiName { Load(); NSString *n = [[objc_getClass("SBWiFiManager") sharedInstance] currentNetworkName]; return n.length ? n : nil; }
 + (void)setWifi:(BOOL)on { Load(); [[objc_getClass("SBWiFiManager") sharedInstance] setWiFiEnabled:on]; }
 + (BOOL)btOn { Load(); return [[objc_getClass("BluetoothManager") sharedInstance] powered]; }
-+ (void)setBT:(BOOL)on { Load(); id m = [objc_getClass("BluetoothManager") sharedInstance]; [m setPowered:on]; [m setEnabled:on]; }
++ (void)setBT:(BOOL)on { Load(); id m = [objc_getClass("BluetoothManager") sharedInstance]; [m setPowered:on]; ((BOOL(*)(id, SEL, BOOL))objc_msgSend)(m, NSSelectorFromString(@"setEnabled:"), on); }
 
 + (id)ringer {
     @try { return [[UIApplication sharedApplication] valueForKey:@"ringerControl"]; } @catch (__unused NSException *e) { return nil; }
@@ -223,8 +231,9 @@ static NSString *const kDNDClient = @"com.opcc.coloroscc";
 }
 
 + (void)openApp:(NSString *)b {
-    [[UIApplication sharedApplication] performSelector:NSSelectorFromString(@"launchApplicationWithIdentifier:suspended:") withObject:b withObject:nil];
-    // suspended: nil == NO
+    UIApplication *app = [UIApplication sharedApplication];
+    SEL sel = NSSelectorFromString(@"launchApplicationWithIdentifier:suspended:");
+    if ([app respondsToSelector:sel]) ((void (*)(id, SEL, id, BOOL))objc_msgSend)(app, sel, b, NO);
 }
 + (void)openSettingsURL:(NSString *)u {
     [[objc_getClass("LSApplicationWorkspace") defaultWorkspace] openSensitiveURL:[NSURL URLWithString:u] withOptions:nil];
